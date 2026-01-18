@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#7c3aed">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Speechify">
+  <meta name="description" content="Advanced text-to-speech reader with OCR and library management">
+  <title>Speechify Clone - PWA</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%237c3aed' width='100' height='100' rx='20'/><text x='50' y='65' text-anchor='middle' fill='white' font-size='50'>📖</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://js.puter.com/v2/"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { overscroll-behavior: none; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(51, 65, 85, 0.3); border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(168, 85, 247, 0.5); border-radius: 4px; }
+    .highlighted { animation: pulse 0.3s ease-out; }
+    @keyframes pulse { 0% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    .slide-up { animation: slideUp 0.3s ease-out; }
+    @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    input[type="range"] { -webkit-appearance: none; height: 8px; border-radius: 4px; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #a855f7; cursor: pointer; }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 20px); }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white min-h-screen">
+  
+  <!-- Loading Screen -->
+  <div id="loadingScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div class="text-center px-6">
+      <div class="w-16 h-16 border-4 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+      <h2 class="text-2xl font-bold text-white mb-4">Loading Speechify</h2>
+      <div class="w-64 bg-slate-700 rounded-full h-3 overflow-hidden mx-auto">
+        <div id="loadingBar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+      </div>
+      <p id="loadingText" class="text-gray-400 text-sm mt-3">0%</p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 backdrop-blur-lg bg-slate-900/80 border-b border-purple-500/20 safe-area-top">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+            Speechify Clone
+          </h1>
+          <p class="text-xs text-gray-400 hidden sm:block">Text-to-speech reader</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="themeToggle" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors">
+            <svg id="sunIcon" class="w-5 h-5 text-yellow-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+            <svg id="moonIcon" class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+          </button>
+          <button id="libraryToggle" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 transition-colors text-sm font-medium">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/>
+            </svg>
+            <span class="hidden sm:inline">Library</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Library View -->
+    <div id="libraryView" class="max-w-7xl mx-auto px-4 py-6">
+      <div class="backdrop-blur rounded-xl p-4 sm:p-6 border bg-slate-800/50 border-purple-500/20">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-bold flex items-center gap-2">
+            <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+            </svg>
+            My Library
+          </h2>
+          <label class="cursor-pointer px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 transition-colors text-sm font-medium">
+            <input type="file" id="fileInput" accept=".txt,.pdf,image/*" class="hidden">
+            + Add Book
+          </label>
+        </div>
+
+        <!-- Processing Status -->
+        <div id="processingStatus" class="hidden mb-4 bg-purple-900/30 border border-purple-500/30 rounded-xl p-4">
+          <div class="flex items-center gap-3">
+            <div class="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+            <div class="flex-1">
+              <p id="processingText" class="text-sm font-medium">Processing...</p>
+              <div class="mt-2">
+                <div class="w-full rounded-full h-2 bg-slate-700">
+                  <div id="processingBar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty Library -->
+        <div id="emptyLibrary" class="text-center py-12">
+          <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <p class="text-gray-400">Your library is empty. Upload a book to get started!</p>
+        </div>
+
+        <!-- Library Grid -->
+        <div id="libraryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-6"></div>
+      </div>
+    </div>
+
+    <!-- Reader View -->
+    <div id="readerView" class="hidden max-w-7xl mx-auto px-4 py-4 pb-32">
+      <!-- Book Header -->
+      <div class="backdrop-blur rounded-xl p-4 border bg-slate-800/50 border-purple-500/20 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex-1 min-w-0">
+            <h2 id="bookTitle" class="text-lg font-bold truncate"></h2>
+            <div class="flex items-center gap-2 text-xs text-gray-400 mt-1">
+              <span id="bookWordCount"></span>
+              <span>•</span>
+              <span id="bookProgress"></span>
+            </div>
+          </div>
+          <button id="backToLibrary" class="ml-4 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="mt-3 w-full rounded-full h-2 bg-slate-700">
+          <div id="progressBar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- PDF Navigation -->
+      <div id="pdfNav" class="hidden backdrop-blur rounded-xl p-3 border bg-slate-800/50 border-purple-500/20 mb-4">
+        <div class="flex items-center justify-between">
+          <button id="prevPage" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-sm">← Prev</button>
+          <span id="pageInfo" class="text-sm text-gray-400">Page 1 of 1</span>
+          <button id="nextPage" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-sm">Next →</button>
+        </div>
+      </div>
+
+      <!-- Content Display -->
+      <div class="backdrop-blur rounded-xl p-4 border bg-slate-800/50 border-purple-500/20 shadow-xl">
+        <div id="textContent" class="text-base sm:text-lg leading-relaxed max-h-[50vh] sm:max-h-[60vh] overflow-y-auto custom-scrollbar"></div>
+        <div id="pdfContent" class="hidden max-h-[50vh] sm:max-h-[60vh] overflow-y-auto custom-scrollbar">
+          <img id="pdfImage" class="w-full rounded-lg shadow-xl" alt="PDF Page">
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-4 gap-2 mt-4">
+        <div class="backdrop-blur rounded-lg p-3 border bg-slate-800/50 border-purple-500/20 text-center">
+          <div class="text-xs text-gray-400">Page</div>
+          <div id="currentPage" class="text-sm font-semibold">1/1</div>
+        </div>
+        <div class="backdrop-blur rounded-lg p-3 border bg-slate-800/50 border-purple-500/20 text-center">
+          <div class="text-xs text-gray-400">Elapsed</div>
+          <div id="elapsedTime" class="text-sm font-semibold">0:00</div>
+        </div>
+        <div class="backdrop-blur rounded-lg p-3 border bg-slate-800/50 border-purple-500/20 text-center">
+          <div class="text-xs text-gray-400">Left</div>
+          <div id="remainingTime" class="text-sm font-semibold">0:00</div>
+        </div>
+        <div class="backdrop-blur rounded-lg p-3 border bg-slate-800/50 border-purple-500/20 text-center">
+          <div class="text-xs text-gray-400">Total</div>
+          <div id="totalTime" class="text-sm font-semibold">0:00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Player Controls -->
+    <div id="playerControls" class="hidden fixed bottom-0 left-0 right-0 z-50 slide-up safe-bottom">
+      <div class="backdrop-blur-xl bg-slate-900/95 border-t border-purple-500/30 px-4 py-3">
+        <div class="max-w-7xl mx-auto">
+          <!-- Main Controls -->
+          <div class="flex items-center justify-center gap-4 mb-3">
+            <button id="resetBtn" class="p-3 rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+            </button>
+            <button id="playPauseBtn" class="p-4 rounded-full bg-purple-600 hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30">
+              <svg id="playIcon" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <svg id="pauseIcon" class="w-8 h-8 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </button>
+            <button id="settingsBtn" class="p-3 rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Speed Control -->
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-400 w-12">Speed</span>
+            <input type="range" id="speedSlider" min="0.5" max="4" step="0.1" value="1" class="flex-1 bg-slate-700 accent-purple-500">
+            <span id="speedValue" class="text-sm font-semibold w-12 text-right">1.0x</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div class="bg-slate-900 w-full sm:max-w-md sm:rounded-xl rounded-t-3xl p-6 border border-purple-500/20 max-h-[80vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-xl font-bold">Settings</h3>
+          <button id="closeSettings" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Voice Selection -->
+        <div class="mb-6">
+          <label class="block text-sm text-gray-400 mb-2">Voice</label>
+          <select id="voiceSelect" class="w-full rounded-lg px-3 py-3 bg-slate-800 text-white border border-slate-700 focus:border-purple-500 focus:outline-none"></select>
+        </div>
+
+        <!-- Voice Filters -->
+        <div class="mb-6">
+          <label class="block text-sm text-gray-400 mb-2">Language Filter</label>
+          <select id="langFilter" class="w-full rounded-lg px-3 py-3 bg-slate-800 text-white border border-slate-700 focus:border-purple-500 focus:outline-none">
+            <option value="all">All Languages</option>
+          </select>
+        </div>
+
+        <!-- Auto-scroll Toggle -->
+        <div class="flex items-center justify-between py-3">
+          <span class="text-sm text-gray-300">Auto-scroll</span>
+          <button id="autoScrollToggle" class="w-12 h-7 rounded-full bg-purple-600 transition-colors relative">
+            <div id="autoScrollThumb" class="w-5 h-5 bg-white rounded-full absolute top-1 transition-transform translate-x-6"></div>
+          </button>
+        </div>
+
+        <!-- TTS Engine -->
+        <div class="mt-4">
+          <label class="block text-sm text-gray-400 mb-2">TTS Engine</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button id="engineBrowser" class="py-2 px-3 rounded-lg bg-purple-600 text-white text-sm transition-colors">Browser</button>
+            <button id="enginePuter" class="py-2 px-3 rounded-lg bg-slate-700 text-gray-400 text-sm transition-colors">Puter AI</button>
+            <button id="engineEdge" class="py-2 px-3 rounded-lg bg-slate-700 text-gray-400 text-sm transition-colors opacity-50" disabled>Edge</button>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">Puter AI offers free unlimited TTS</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // App State
+    const state = {
+      library: [],
+      currentBook: null,
+      text: '',
+      words: [],
+      currentWordIndex: 0,
+      isPlaying: false,
+      rate: 1,
+      voice: null,
+      voices: [],
+      autoScroll: true,
+      darkMode: true,
+      elapsedTime: 0,
+      isPdfMode: false,
+      pdfPages: [],
+      currentPdfPage: 0,
+      ttsEngine: 'browser',
+      isPuterAvailable: false
+    };
+
+    let utterance = null;
+    let timerInterval = null;
+    let startTime = null;
+    let tesseractWorker = null;
+
+    // DOM Elements
+    const $ = id => document.getElementById(id);
+
+    // Initialize PDF.js
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    // Storage helpers
+    const storage = {
+      async get(key) {
+        try {
+          const value = localStorage.getItem(key);
+          return value ? JSON.parse(value) : null;
+        } catch { return null; }
+      },
+      async set(key, value) {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) { console.error('Storage error:', e); }
+      }
+    };
+
+    // Initialize app
+    async function init() {
+      updateLoadingProgress(20);
+      
+      // Load saved data
+      const savedLibrary = await storage.get('library');
+      if (savedLibrary) state.library = savedLibrary;
+      
+      const savedTheme = await storage.get('theme');
+      if (savedTheme !== null) state.darkMode = savedTheme;
+      
+      updateLoadingProgress(40);
+
+      // Initialize Tesseract
+      try {
+        if (window.Tesseract) {
+          tesseractWorker = await Tesseract.createWorker('eng');
+        }
+      } catch (e) { console.log('Tesseract init error:', e); }
+
+      updateLoadingProgress(60);
+
+      // Load voices
+      loadVoices();
+      speechSynthesis.onvoiceschanged = loadVoices;
+
+      // Check Puter availability
+      setTimeout(() => {
+        if (window.puter && window.puter.ai) {
+          state.isPuterAvailable = true;
+          $('enginePuter').classList.remove('opacity-50');
+        }
+      }, 1000);
+
+      updateLoadingProgress(80);
+
+      // Setup event listeners
+      setupEventListeners();
+      
+      updateLoadingProgress(100);
+
+      // Show app
+      setTimeout(() => {
+        $('loadingScreen').classList.add('hidden');
+        $('app').classList.remove('hidden');
+        renderLibrary();
+        applyTheme();
+      }, 500);
+    }
+
+    function updateLoadingProgress(percent) {
+      $('loadingBar').style.width = `${percent}%`;
+      $('loadingText').textContent = `${percent}%`;
+    }
+
+    function loadVoices() {
+      const voices = speechSynthesis.getVoices().filter(v => !v.name.toLowerCase().includes('google'));
+      state.voices = voices;
+      
+      if (voices.length > 0 && !state.voice) {
+        state.voice = voices.find(v => v.lang.startsWith('en')) || voices[0];
+      }
+      
+      updateVoiceSelect();
+    }
+
+    function updateVoiceSelect() {
+      const select = $('voiceSelect');
+      const langFilter = $('langFilter');
+      const currentLang = langFilter.value;
+      
+      // Get unique languages
+      const languages = [...new Set(state.voices.map(v => v.lang.split('-')[0]))].sort();
+      
+      // Update language filter
+      langFilter.innerHTML = '<option value="all">All Languages</option>' +
+        languages.map(l => `<option value="${l}">${l.toUpperCase()}</option>`).join('');
+      langFilter.value = currentLang;
+      
+      // Filter voices
+      let filtered = state.voices;
+      if (currentLang !== 'all') {
+        filtered = state.voices.filter(v => v.lang.startsWith(currentLang));
+      }
+      
+      select.innerHTML = filtered.map(v => 
+        `<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`
+      ).join('');
+      
+      if (state.voice) {
+        select.value = state.voice.voiceURI;
+      }
+    }
+
+    function setupEventListeners() {
+      // Theme toggle
+      $('themeToggle').addEventListener('click', () => {
+        state.darkMode = !state.darkMode;
+        applyTheme();
+        storage.set('theme', state.darkMode);
+      });
+
+      // Library toggle
+      $('libraryToggle').addEventListener('click', () => {
+        if (state.currentBook) {
+          showLibrary();
+        }
+      });
+
+      // File input
+      $('fileInput').addEventListener('change', handleFileUpload);
+
+      // Back to library
+      $('backToLibrary').addEventListener('click', showLibrary);
+
+      // Play/Pause
+      $('playPauseBtn').addEventListener('click', togglePlayPause);
+      $('resetBtn').addEventListener('click', resetPlayback);
+
+      // Speed control
+      $('speedSlider').addEventListener('input', (e) => {
+        state.rate = parseFloat(e.target.value);
+        $('speedValue').textContent = `${state.rate.toFixed(1)}x`;
+      });
+
+      // Settings
+      $('settingsBtn').addEventListener('click', () => $('settingsModal').classList.remove('hidden'));
+      $('closeSettings').addEventListener('click', () => $('settingsModal').classList.add('hidden'));
+      $('settingsModal').addEventListener('click', (e) => {
+        if (e.target === $('settingsModal')) $('settingsModal').classList.add('hidden');
+      });
+
+      // Voice selection
+      $('voiceSelect').addEventListener('change', (e) => {
+        state.voice = state.voices.find(v => v.voiceURI === e.target.value);
+      });
+
+      $('langFilter').addEventListener('change', updateVoiceSelect);
+
+      // Auto-scroll toggle
+      $('autoScrollToggle').addEventListener('click', () => {
+        state.autoScroll = !state.autoScroll;
+        updateAutoScrollUI();
+      });
+
+      // TTS Engine buttons
+      $('engineBrowser').addEventListener('click', () => setTTSEngine('browser'));
+      $('enginePuter').addEventListener('click', () => {
+        if (state.isPuterAvailable) setTTSEngine('puter');
+      });
+
+      // PDF navigation
+      $('prevPage').addEventListener('click', () => navigatePdf(-1));
+      $('nextPage').addEventListener('click', () => navigatePdf(1));
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && state.text && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+          e.preventDefault();
+          togglePlayPause();
+        }
+      });
+
+      // Touch gestures for swipe navigation on PDF
+      let touchStartX = 0;
+      $('pdfContent').addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+      });
+      $('pdfContent').addEventListener('touchend', (e) => {
+        const diff = touchStartX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 50) {
+          navigatePdf(diff > 0 ? 1 : -1);
+        }
+      });
+    }
+
+    function setTTSEngine(engine) {
+      state.ttsEngine = engine;
+      ['engineBrowser', 'enginePuter', 'engineEdge'].forEach(id => {
+        const btn = $(id);
+        if (id === `engine${engine.charAt(0).toUpperCase() + engine.slice(1)}`) {
+          btn.classList.remove('bg-slate-700', 'text-gray-400');
+          btn.classList.add('bg-purple-600', 'text-white');
+        } else {
+          btn.classList.add('bg-slate-700', 'text-gray-400');
+          btn.classList.remove('bg-purple-600', 'text-white');
+        }
+      });
+    }
+
+    function updateAutoScrollUI() {
+      const thumb = $('autoScrollThumb');
+      const toggle = $('autoScrollToggle');
+      if (state.autoScroll) {
+        thumb.classList.add('translate-x-6');
+        thumb.classList.remove('translate-x-1');
+        toggle.classList.add('bg-purple-600');
+        toggle.classList.remove('bg-slate-700');
+      } else {
+        thumb.classList.remove('translate-x-6');
+        thumb.classList.add('translate-x-1');
+        toggle.classList.remove('bg-purple-600');
+        toggle.classList.add('bg-slate-700');
+      }
+    }
+
+    function applyTheme() {
+      const body = document.body;
+      if (state.darkMode) {
+        body.classList.add('bg-gradient-to-br', 'from-slate-900', 'via-purple-900', 'to-slate-900', 'text-white');
+        body.classList.remove('from-blue-50', 'via-purple-50', 'to-pink-50', 'text-gray-900');
+        $('sunIcon').classList.add('hidden');
+        $('moonIcon').classList.remove('hidden');
+      } else {
+        body.classList.remove('from-slate-900', 'via-purple-900', 'to-slate-900');
+        body.classList.add('from-blue-50', 'via-purple-50', 'to-pink-50', 'text-gray-900');
+        $('sunIcon').classList.remove('hidden');
+        $('moonIcon').classList.add('hidden');
+      }
+    }
+
+    function renderLibrary() {
+      const grid = $('libraryGrid');
+      const empty = $('emptyLibrary');
+      
+      if (state.library.length === 0) {
+        empty.classList.remove('hidden');
+        grid.innerHTML = '';
+        return;
+      }
+      
+      empty.classList.add('hidden');
+      grid.innerHTML = state.library.map(book => `
+        <div class="group relative cursor-pointer" onclick="openBook(${book.id})">
+          <div class="aspect-[2/3] bg-gradient-to-br ${book.thumbnail?.gradient || 'from-purple-500 to-pink-600'} rounded-lg shadow-xl transform group-hover:scale-105 transition-all duration-300 flex items-center justify-center relative overflow-hidden">
+            <div class="text-5xl font-bold text-white/90">${book.thumbnail?.initial || book.title.charAt(0).toUpperCase()}</div>
+            <div class="absolute bottom-0 left-0 right-0 h-2 bg-black/30">
+              <div class="h-full bg-white/90 transition-all" style="width: ${book.progress || 0}%"></div>
+            </div>
+            <button onclick="event.stopPropagation(); deleteBook(${book.id})" class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+          <div class="mt-2">
+            <p class="font-medium text-sm truncate">${book.title}</p>
+            <p class="text-xs text-gray-400">${book.progress > 0 ? Math.round(book.progress) + '% complete' : 'Not started'}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      showProcessing(true, 'Analyzing file...');
+      
+      try {
+        let extractedText = '';
+        let pdfData = null;
+        let isPdf = false;
+        
+        if (file.type === 'text/plain') {
+          updateProcessing('Reading text file...', 50);
+          extractedText = await file.text();
+        } else if (file.type.startsWith('image/')) {
+          updateProcessing('Running OCR...', 30);
+          if (tesseractWorker) {
+            const { data } = await tesseractWorker.recognize(file);
+            extractedText = data.text;
+          }
+        } else if (file.type === 'application/pdf') {
+          const result = await processPDF(file);
+          if (result) {
+            extractedText = result.text;
+            pdfData = result.pdfData;
+            isPdf = true;
+          }
+        }
+        
+        if (extractedText && extractedText.trim()) {
+          const gradients = [
+            'from-blue-500 to-purple-600',
+            'from-green-500 to-teal-600',
+            'from-orange-500 to-red-600',
+            'from-pink-500 to-rose-600',
+            'from-indigo-500 to-blue-600'
+          ];
+          
+          const newBook = {
+            id: Date.now(),
+            title: file.name.replace(/\.[^/.]+$/, ''),
+            text: extractedText,
+            thumbnail: {
+              gradient: gradients[Math.floor(Math.random() * gradients.length)],
+              initial: file.name.charAt(0).toUpperCase()
+            },
+            progress: 0,
+            lastPosition: 0,
+            wordCount: extractedText.split(/\s+/).filter(w => w).length,
+            isPdf,
+            pdfData
+          };
+          
+          state.library.push(newBook);
+          await storage.set('library', state.library.map(b => ({...b, pdfData: null})));
+          renderLibrary();
+          openBook(newBook.id);
+        }
+      } catch (error) {
+        console.error('File processing error:', error);
+        updateProcessing('Error: ' + error.message, 0);
+        setTimeout(() => showProcessing(false), 3000);
+      }
+      
+      showProcessing(false);
+      e.target.value = '';
+    }
+
+    async function processPDF(file) {
+      if (!window.pdfjsLib) return null;
+      
+      updateProcessing('Loading PDF...', 10);
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let fullText = '';
+      const pages = [];
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        updateProcessing(`Processing page ${i}/${pdf.numPages}...`, (i / pdf.numPages) * 90);
+        
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        
+        // Render page
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        
+        pages.push({
+          pageNumber: i,
+          image: canvas.toDataURL('image/jpeg', 0.85),
+          text: pageText
+        });
+        
+        fullText += pageText + ' ';
+      }
+      
+      return { text: fullText.trim(), pdfData: { pages } };
+    }
+
+    function showProcessing(show, text = '') {
+      const el = $('processingStatus');
+      if (show) {
+        el.classList.remove('hidden');
+        $('processingText').textContent = text;
+      } else {
+        el.classList.add('hidden');
+      }
+    }
+
+    function updateProcessing(text, percent) {
+      $('processingText').textContent = text;
+      $('processingBar').style.width = `${percent}%`;
+    }
+
+    window.openBook = function(id) {
+      const book = state.library.find(b => b.id === id);
+      if (!book) return;
+      
+      state.currentBook = book;
+      state.text = book.text;
+      state.words = book.text.split(/(\s+)/).filter(w => w.trim());
+      state.currentWordIndex = book.lastPosition || 0;
+      state.isPdfMode = book.isPdf && book.pdfData;
+      state.pdfPages = book.pdfData?.pages || [];
+      state.currentPdfPage = 0;
+      
+      $('libraryView').classList.add('hidden');
+      $('readerView').classList.remove('hidden');
+      $('playerControls').classList.remove('hidden');
+      
+      $('bookTitle').textContent = book.title;
+      $('bookWordCount').textContent = `${book.wordCount.toLocaleString()} words`;
+      updateProgress();
+      
+      if (state.isPdfMode) {
+        $('pdfNav').classList.remove('hidden');
+        $('textContent').classList.add('hidden');
+        $('pdfContent').classList.remove('hidden');
+        renderPdfPage();
+      } else {
+        $('pdfNav').classList.add('hidden');
+        $('textContent').classList.remove('hidden');
+        $('pdfContent').classList.add('hidden');
+        renderText();
+      }
+      
+      updateStats();
+    };
+
+    function showLibrary() {
+      stopPlayback();
+      state.currentBook = null;
+      
+      $('libraryView').classList.remove('hidden');
+      $('readerView').classList.add('hidden');
+      $('playerControls').classList.add('hidden');
+      
+      renderLibrary();
+    }
+
+    window.deleteBook = async function(id) {
+      if (confirm('Delete this book?')) {
+        state.library = state.library.filter(b => b.id !== id);
+        await storage.set('library', state.library);
+        renderLibrary();
+        if (state.currentBook?.id === id) {
+          showLibrary();
+        }
+      }
+    };
+
+    function renderText() {
+      const container = $('textContent');
+      container.innerHTML = state.words.map((word, i) => 
+        `<span class="word cursor-pointer hover:bg-purple-200/30 transition-all ${
+          i === state.currentWordIndex ? 'highlighted bg-purple-500 text-white px-1 rounded font-semibold' : ''
+        }" data-index="${i}">${word} </span>`
+      ).join('');
+      
+      container.querySelectorAll('.word').forEach(el => {
+        el.addEventListener('click', () => {
+          const index = parseInt(el.dataset.index);
+          stopPlayback();
+          state.currentWordIndex = index;
+          renderText();
+          updateProgress();
+        });
+      });
+      
+      scrollToCurrentWord();
+    }
+
+    function renderPdfPage() {
+      const page = state.pdfPages[state.currentPdfPage];
+      if (page) {
+        $('pdfImage').src = page.image;
+        $('pageInfo').textContent = `Page ${state.currentPdfPage + 1} of ${state.pdfPages.length}`;
+      }
+    }
+
+    function navigatePdf(direction) {
+      const newPage = state.currentPdfPage + direction;
+      if (newPage >= 0 && newPage < state.pdfPages.length) {
+        state.currentPdfPage = newPage;
+        renderPdfPage();
+        
+        // Update word index
+        let wordIndex = 0;
+        for (let i = 0; i < newPage; i++) {
+          wordIndex += state.pdfPages[i].text.split(/\s+/).filter(w => w).length;
+        }
+        state.currentWordIndex = wordIndex;
+        updateProgress();
+      }
+    }
+
+    function scrollToCurrentWord() {
+      if (!state.autoScroll) return;
+      const highlighted = document.querySelector('.highlighted');
+      if (highlighted) {
+        highlighted.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function togglePlayPause() {
+      if (state.isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
+    }
+
+    async function startPlayback() {
+      if (!state.text) return;
+      
+      state.isPlaying = true;
+      $('playIcon').classList.add('hidden');
+      $('pauseIcon').classList.remove('hidden');
+      
+      startTime = Date.now() - (state.elapsedTime * 1000);
+      timerInterval = setInterval(() => {
+        state.elapsedTime = (Date.now() - startTime) / 1000;
+        updateStats();
+      }, 100);
+
+      if (state.ttsEngine === 'puter' && state.isPuterAvailable) {
+        try {
+          const remainingText = state.words.slice(state.currentWordIndex).join(' ');
+          const audio = await puter.ai.txt2speech(remainingText);
+          audio.play();
+          
+          audio.onended = () => {
+            state.currentWordIndex = state.words.length - 1;
+            stopPlayback();
+          };
+          
+          // Simulate word tracking
+          const wordsPerSecond = 2.5 * state.rate;
+          const trackingInterval = setInterval(() => {
+            if (!state.isPlaying) {
+              clearInterval(trackingInterval);
+              return;
+            }
+            state.currentWordIndex++;
+            if (state.currentWordIndex >= state.words.length) {
+              clearInterval(trackingInterval);
+            } else {
+              if (!state.isPdfMode) renderText();
+              updateProgress();
+            }
+          }, 1000 / wordsPerSecond);
+        } catch (e) {
+          console.error('Puter TTS error:', e);
+          useBrowserTTS();
+        }
+      } else {
+        useBrowserTTS();
+      }
+    }
+
+    function useBrowserTTS() {
+      speechSynthesis.cancel();
+      
+      const remainingText = state.words.slice(state.currentWordIndex).join(' ');
+      utterance = new SpeechSynthesisUtterance(remainingText);
+      utterance.rate = state.rate;
+      
+      if (state.voice) {
+        const voices = speechSynthesis.getVoices();
+        const matched = voices.find(v => v.voiceURI === state.voice.voiceURI);
+        if (matched) utterance.voice = matched;
+      }
+      
+      let startWordIndex = state.currentWordIndex;
+      
+      utterance.onboundary = (e) => {
+        if (e.name === 'word') {
+          let charCount = 0;
+          for (let i = startWordIndex; i < state.words.length; i++) {
+            charCount += state.words[i].length + 1;
+            if (charCount > e.charIndex) {
+              state.currentWordIndex = i;
+              if (!state.isPdfMode) renderText();
+              updateProgress();
+              break;
+            }
+          }
+        }
+      };
+      
+      utterance.onend = () => {
+        state.currentWordIndex = state.words.length - 1;
+        stopPlayback();
+      };
+      
+      utterance.onerror = () => stopPlayback();
+      
+      speechSynthesis.speak(utterance);
+    }
+
+    function stopPlayback() {
+      state.isPlaying = false;
+      speechSynthesis.cancel();
+      
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      
+      $('playIcon').classList.remove('hidden');
+      $('pauseIcon').classList.add('hidden');
+      
+      saveProgress();
+    }
+
+    function resetPlayback() {
+      stopPlayback();
+      state.currentWordIndex = 0;
+      state.elapsedTime = 0;
+      state.currentPdfPage = 0;
+      
+      if (state.isPdfMode) {
+        renderPdfPage();
+      } else {
+        renderText();
+      }
+      updateProgress();
+      updateStats();
+    }
+
+    function updateProgress() {
+      const progress = (state.currentWordIndex / state.words.length) * 100;
+      $('progressBar').style.width = `${progress}%`;
+      $('bookProgress').textContent = `${Math.round(progress)}% complete`;
+      
+      if (state.currentBook) {
+        state.currentBook.progress = progress;
+        state.currentBook.lastPosition = state.currentWordIndex;
+      }
+    }
+
+    function saveProgress() {
+      if (state.currentBook) {
+        const idx = state.library.findIndex(b => b.id === state.currentBook.id);
+        if (idx >= 0) {
+          state.library[idx] = { ...state.currentBook };
+          storage.set('library', state.library.map(b => ({...b, pdfData: null})));
+        }
+      }
+    }
+
+    function updateStats() {
+      const wpm = 150 * state.rate;
+      const totalWords = state.words.length;
+      const wordsRemaining = totalWords - state.currentWordIndex;
+      const totalMinutes = totalWords / wpm;
+      const remainingMinutes = wordsRemaining / wpm;
+      
+      const currentPage = Math.floor((state.currentWordIndex / totalWords) * Math.max(1, Math.ceil(totalWords / 250))) + 1;
+      const totalPages = Math.max(1, Math.ceil(totalWords / 250));
+      
+      const formatTime = (mins) => {
+        const m = Math.floor(mins);
+        const s = Math.floor((mins - m) * 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+      };
+      
+      $('currentPage').textContent = state.isPdfMode 
+        ? `${state.currentPdfPage + 1}/${state.pdfPages.length}` 
+        : `${currentPage}/${totalPages}`;
+      $('elapsedTime').textContent = formatTime(state.elapsedTime / 60);
+      $('remainingTime').textContent = formatTime(remainingMinutes);
+      $('totalTime').textContent = formatTime(totalMinutes);
+    }
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(e => console.log('SW registration failed:', e));
+    }
+
+    // Start app
+    init();
+  </script>
+</body>
+</html>
